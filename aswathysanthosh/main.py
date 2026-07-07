@@ -1,9 +1,18 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from typing import Literal
 from dotenv import load_dotenv
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 import os
+
+#Creating the limiter
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["5/minute"])
 
 # Load environment variables
 load_dotenv()
@@ -11,6 +20,9 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 
 app = FastAPI()
+app.state.limiter = limiter
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # API Key Authentication
 api_key_header = APIKeyHeader(
@@ -59,7 +71,9 @@ def get_todos(api_key: str = Depends(verify_api_key)):
 
 
 @app.post("/todos", status_code=201)
-def create_todo(
+@limiter.limit("3/minute")
+async def create_todo(
+    request: Request,
     todo: Todo,
     api_key: str = Depends(verify_api_key)
 ):
